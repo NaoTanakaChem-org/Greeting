@@ -1,0 +1,1342 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#04060b">
+<meta name="robots" content="noindex,nofollow">
+<title>0</title>
+<style>
+/* =========================================================
+   0. ベース / テーマ
+   夜・謎・プロローグ。黒〜濃紺 + 白〜薄いグレー。
+   ========================================================= */
+:root{
+  --bg: #04060b;          /* ページ背景（0-1で動的に変化） */
+  --fg: #e9eef6;          /* 主要文字色 */
+  --dim: rgba(233,238,246,.46);
+  --faint: rgba(233,238,246,.22);
+  --hair: rgba(233,238,246,.12);
+  --ease: cubic-bezier(.22,.61,.36,1);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+*{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html,body{
+  margin:0; padding:0; height:100%;
+  background:var(--bg); color:var(--fg);
+  overflow:hidden; overscroll-behavior:none;
+  -webkit-user-select:none; user-select:none;
+  -webkit-text-size-adjust:100%;
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;
+  font-weight:400; letter-spacing:.06em;
+  transition:background-color 1.2s var(--ease);
+}
+button{ font:inherit; color:inherit; background:none; border:0; padding:0; cursor:pointer; letter-spacing:inherit; }
+
+#app{
+  position:fixed; inset:0;
+  display:flex; flex-direction:column;
+  padding-top:var(--safe-t); padding-bottom:var(--safe-b);
+}
+
+/* =========================================================
+   1. 手がかり欄（上部）/ 進行表示
+   ========================================================= */
+#clueBar{
+  flex:0 0 auto; min-height:54px;
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 18px 4px;
+  opacity:0; transition:opacity .9s var(--ease);
+}
+#clueBar.show{ opacity:1; }
+#clues{ display:flex; align-items:flex-start; gap:18px; }
+.clue{
+  opacity:0; transform:translateY(-4px);
+  transition:opacity 1s var(--ease), transform 1s var(--ease);
+  color:var(--dim); font-size:11px; letter-spacing:.14em;
+  line-height:1.2;
+}
+.clue.on{ opacity:1; transform:none; }
+.clue-num{ display:flex; flex-direction:column; align-items:center; gap:1px; font-size:11px; line-height:1.05; }
+#progress{ color:var(--faint); font-size:10px; letter-spacing:.22em; }
+
+/* =========================================================
+   2. ステージ（画面切替）
+   ========================================================= */
+#stage{ position:relative; flex:1 1 auto; min-height:0; }
+.screen{
+  position:absolute; inset:0;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  padding:0 20px; text-align:center;
+  opacity:0; pointer-events:none; visibility:hidden;
+  /* フェードアウトが終わってから非表示にする */
+  transition:opacity .9s var(--ease), visibility 0s linear .9s;
+}
+.screen.active{
+  opacity:1; pointer-events:auto; visibility:visible;
+  transition:opacity .9s var(--ease), visibility 0s linear 0s;
+}
+/* 非アクティブ画面の透明な操作領域（SVGのヒット領域など）が
+   タップを横取りしないように、子孫ごと無効化する */
+.screen:not(.active) *{ pointer-events:none !important; }
+
+.fade{ opacity:0; transition:opacity 1.1s var(--ease), transform 1.1s var(--ease); }
+.fade.on{ opacity:1; }
+
+/* ---- タイトル ---- */
+#t-zero{ font-size:104px; line-height:1; font-weight:200; letter-spacing:0; }
+#t-prologue{ margin-top:14px; font-size:11px; letter-spacing:.42em; color:var(--dim); }
+#t-lead{ margin-top:56px; font-size:14px; color:var(--fg); line-height:2; }
+#t-tap{ position:absolute; bottom:26px; font-size:10px; letter-spacing:.3em; color:var(--faint); }
+#t-tap.blink{ animation:breathe 3.4s ease-in-out infinite; }
+@keyframes breathe{ 0%,100%{opacity:.25} 50%{opacity:.7} }
+
+/* ---- 共通の問題文 ---- */
+.prompt{ font-size:14px; line-height:2; color:var(--fg); margin:0 0 18px; }
+.sub{ font-size:11px; color:var(--dim); letter-spacing:.2em; }
+
+/* ---- 結果表示 ---- */
+.result{ font-size:30px; letter-spacing:.1em; font-weight:300; }
+.whisper{ margin-top:26px; font-size:12px; color:var(--dim); letter-spacing:.2em; }
+
+/* ---- SVGステージ ---- */
+svg{ display:block; max-width:100%; height:auto; touch-action:none; }
+.board{ width:min(88vw, 330px); }
+.board.small{ width:min(78vw, 300px); }
+/* 0-3 第二段階は縦長（上に空・下に街）なので幅を絞る */
+.board.tall{ width:min(70vw, 250px); }
+@media (max-height:640px){ .board.tall{ width:min(58vw, 205px); } }
+
+/* ---- 0-2 完成表示（縦に 6 / 3 / 4） ---- */
+/* 盤面の上に重ねるが、操作の邪魔はしない */
+#s2-done{ position:absolute; inset:0; pointer-events:none;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; }
+.stackNum{ display:flex; flex-direction:column; gap:10px; font-size:34px; font-weight:300; letter-spacing:0; line-height:1; }
+
+/* ---- 0-3 ひらがな ---- */
+.ringChar{ font-size:23px; fill:var(--fg); opacity:.72; transition:opacity .5s var(--ease), fill .5s var(--ease); }
+.ringChar.picked{ opacity:1; }
+.ringChar.dark{ opacity:.1; }
+.ringHit{ fill:#000; fill-opacity:0; }
+.shake{ animation:shk .42s var(--ease); }
+@keyframes shk{ 0%,100%{transform:translateX(0)} 25%{transform:translateX(-2.5px)} 75%{transform:translateX(2.5px)} }
+#ringCenter{ font-size:26px; fill:var(--fg); opacity:0; transition:opacity 1.1s var(--ease); letter-spacing:.14em; }
+#ringCenter.on{ opacity:1; }
+
+/* ---- 最終画面 ---- */
+#f-lines{ display:flex; flex-direction:column; gap:42px; align-items:center; }
+#f-lines div{ font-size:26px; font-weight:300; letter-spacing:.12em; opacity:0; transition:opacity 1.4s var(--ease); }
+#f-lines div.on{ opacity:1; }
+#f-tomorrow{ position:absolute; bottom:64px; font-size:13px; color:var(--dim); letter-spacing:.24em; }
+#f-end{ position:absolute; bottom:34px; font-size:9px; color:var(--faint); letter-spacing:.34em; }
+
+/* ---- 暗転オーバーレイ ---- */
+#blackout{
+  position:fixed; inset:0; background:#000; opacity:0;
+  pointer-events:none; transition:opacity 1.1s var(--ease); z-index:40;
+}
+#blackout.on{ opacity:1; }
+
+/* =========================================================
+   3. フッター（救済リンク）
+   ========================================================= */
+#footer{
+  flex:0 0 auto; height:38px;
+  display:flex; align-items:center; justify-content:center;
+  opacity:0; pointer-events:none; transition:opacity 1.2s var(--ease);
+}
+#footer.show{ opacity:1; pointer-events:auto; }
+#helpLink{ font-size:9.5px; letter-spacing:.2em; color:rgba(233,238,246,.2); padding:8px 14px; }
+#helpLink:active{ color:var(--dim); }
+
+/* =========================================================
+   4. ヒント / 最終救済（通常ルートと明確に分離）
+   ========================================================= */
+.overlay{
+  position:fixed; inset:0; z-index:50;
+  background:#070a10;
+  display:flex; flex-direction:column;
+  padding:calc(var(--safe-t) + 26px) 24px calc(var(--safe-b) + 26px);
+  opacity:0; pointer-events:none; transition:opacity .6s var(--ease);
+  overflow-y:auto; -webkit-overflow-scrolling:touch;
+}
+.overlay.on{ opacity:1; pointer-events:auto; }
+.ov-title{ font-size:10px; letter-spacing:.42em; color:var(--faint); margin-bottom:26px; }
+.hintList{ display:flex; flex-direction:column; gap:20px; flex:1 1 auto; }
+.hintItem{
+  border-left:1px solid var(--hair); padding-left:14px;
+  font-size:13px; line-height:1.9; color:var(--fg);
+  opacity:0; max-height:0; overflow:hidden;
+  transition:opacity .7s var(--ease);
+}
+.hintItem.on{ opacity:1; max-height:200px; }
+.hintItem .no{ display:block; font-size:9px; letter-spacing:.3em; color:var(--faint); margin-bottom:6px; }
+.ov-actions{ display:flex; flex-direction:column; gap:14px; margin-top:30px; }
+.btn{
+  border:1px solid var(--hair); border-radius:2px;
+  padding:14px 16px; font-size:12px; letter-spacing:.18em; color:var(--fg);
+  transition:border-color .4s var(--ease), background-color .4s var(--ease);
+}
+.btn:active{ background:rgba(233,238,246,.05); }
+/* 救済の導線は控えめだが、読めなくならない程度の明るさを保つ */
+.btn.quiet{ border-color:transparent; color:rgba(233,238,246,.40); font-size:11px; padding:12px; }
+.btn.danger{ border-color:rgba(233,238,246,.16); color:var(--dim); }
+
+/* 最終救済（答え）: 背景も明確に変える */
+#revealScreen{ background:#101720; align-items:center; justify-content:center; text-align:center; }
+#revealScreen .warn{ font-size:12px; line-height:2; color:var(--dim); margin-bottom:34px; }
+#rv-lines{ display:flex; flex-direction:column; gap:26px; margin-bottom:46px; }
+#rv-lines div{ font-size:24px; font-weight:300; letter-spacing:.12em; }
+
+/* =========================================================
+   5. モーション配慮
+   ========================================================= */
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{
+    animation-duration:.001ms !important; animation-iteration-count:1 !important;
+    transition-duration:.001ms !important;
+  }
+}
+@media (max-height:640px){
+  #t-zero{ font-size:82px; }
+  #t-lead{ margin-top:36px; }
+  #f-lines{ gap:30px; }
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ===== 手がかり欄 ===== -->
+  <header id="clueBar">
+    <div id="clues">
+      <div class="clue" id="clue-am"></div>
+      <div class="clue clue-num" id="clue-num"></div>
+    </div>
+    <div id="progress"></div>
+  </header>
+
+  <!-- ===== ステージ ===== -->
+  <main id="stage">
+
+    <!-- --- タイトル（0 / PROLOGUE） --- -->
+    <section class="screen" id="scr-title">
+      <div id="t-zero" class="fade"></div>
+      <div id="t-prologue" class="fade"></div>
+      <div id="t-lead" class="fade"></div>
+      <div id="t-tap" class="fade"></div>
+    </section>
+
+    <!-- --- 0-1 時計 --- -->
+    <section class="screen" id="scr-s1">
+      <p class="prompt fade" id="s1-prompt"></p>
+      <div id="s1-clockWrap"></div>
+      <div id="s1-result" class="result fade" style="margin-top:22px"></div>
+      <div id="s1-after" class="whisper fade"></div>
+    </section>
+
+    <!-- --- 0-2 ストリップ --- -->
+    <section class="screen" id="scr-s2">
+      <p class="prompt fade" id="s2-prompt"></p>
+      <div id="s2-boardWrap"></div>
+      <div id="s2-done" class="fade">
+        <div class="stackNum" id="s2-stack"></div>
+        <div class="sub" id="s2-caption" style="margin-top:28px"></div>
+      </div>
+    </section>
+
+    <!-- --- 0-3 第一段階 ひらがなの時計 --- -->
+    <section class="screen" id="scr-s3a">
+      <p class="prompt fade" id="s3a-prompt"></p>
+      <div id="s3a-ringWrap"></div>
+    </section>
+
+    <!-- --- 0-3 第二段階 レイヤー合わせ --- -->
+    <section class="screen" id="scr-s3b">
+      <p class="prompt fade" id="s3b-prompt" style="font-size:13px;letter-spacing:.24em;color:var(--dim)"></p>
+      <div id="s3b-boardWrap"></div>
+    </section>
+
+    <!-- --- 最終画面 --- -->
+    <section class="screen" id="scr-end">
+      <div id="f-lines"></div>
+      <div id="f-tomorrow" class="fade"></div>
+      <div id="f-end" class="fade"></div>
+    </section>
+
+  </main>
+
+  <!-- ===== フッター（救済リンク） ===== -->
+  <footer id="footer">
+    <button id="helpLink" type="button"></button>
+  </footer>
+</div>
+
+<div id="blackout"></div>
+
+<!-- ===== ヒント画面 ===== -->
+<div class="overlay" id="hintOverlay">
+  <div class="ov-title" id="hint-title"></div>
+  <div class="hintList" id="hintList"></div>
+  <div class="ov-actions">
+    <button class="btn" id="hint-next" type="button"></button>
+    <button class="btn quiet" id="hint-escalate" type="button"></button>
+    <button class="btn quiet" id="hint-close" type="button"></button>
+  </div>
+</div>
+
+<!-- ===== 確認1 ===== -->
+<div class="overlay" id="confirm1" style="align-items:center;justify-content:center;text-align:center">
+  <div style="font-size:14px;line-height:2;margin-bottom:38px" id="c1-text"></div>
+  <div class="ov-actions" style="width:100%;max-width:300px;margin:0">
+    <button class="btn danger" id="c1-yes" type="button"></button>
+    <button class="btn quiet" id="c1-no" type="button"></button>
+  </div>
+</div>
+
+<!-- ===== 確認2 ===== -->
+<div class="overlay" id="confirm2" style="align-items:center;justify-content:center;text-align:center">
+  <div style="font-size:14px;line-height:2;margin-bottom:38px" id="c2-text"></div>
+  <div class="ov-actions" style="width:100%;max-width:300px;margin:0">
+    <button class="btn danger" id="c2-yes" type="button"></button>
+    <button class="btn quiet" id="c2-no" type="button"></button>
+  </div>
+</div>
+
+<!-- ===== 最終救済（答え） ===== -->
+<div class="overlay" id="revealScreen">
+  <div class="warn" id="rv-warn"></div>
+  <div id="rv-lines"></div>
+  <button class="btn quiet" id="rv-close" type="button"></button>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* =========================================================================
+   CONFIG — 文言・日時・時計文字配置・0-2の正解位置・最終表示はここだけで変更可
+   ========================================================================= */
+const CONFIG = {
+
+  /* localStorage のキー（変えると進行状況がリセットされます） */
+  storageKey: 'nazo_zero_v1',
+
+  /* ---- すべてのUIテキスト ---- */
+  text: {
+    title: {
+      zero:     '0',
+      prologue: 'PROLOGUE',
+      lead:     '明日の待ち合わせを見つけてください。',
+      tap:      'TAP'
+    },
+    s1: {
+      prompt: 'この針が、次にもう一度同じ形になるとき。',
+      result: 'AM 10:00',
+      after:  'ひとつめ。'
+    },
+    s2: {
+      prompt:  '高さを合わせて。',
+      caption: '上から。'
+    },
+    s3a: {
+      prompt: '前の答えは、まだ終わっていない。'
+    },
+    s3b: {
+      prompt: 'あわせろ'
+    },
+    final: {
+      tomorrow: 'では、明日。',
+      end:      '0 / END'
+    },
+    help: {
+      link:      '本当に困ったときだけ',
+      title:     'HINT',
+      next:      '次のヒント',
+      noMore:    'ヒントはここまで',
+      close:     'とじる',
+      escalate:  'それでも集合できそうにない',
+      confirm1:  '本当に答えを見ますか？',
+      confirm2:  'これを開くと第0問の答えが分かります。',
+      yes1:      '見る',
+      yes2:      '開く',
+      no:        'やめる',
+      revealWarn:'第0問の答え',
+      revealBack:'とじる'
+    },
+    progress: { s1:'0-1 / 0-3', s2:'0-2 / 0-3', s3:'0-3 / 0-3' }
+  },
+
+  /* ---- ヒント（段階制・ここまでは場所を直接言わない） ---- */
+  hints: [
+    '前に手に入れた答えも使います。',
+    '10時の位置から、時計回りに 6 → 3 → 4。',
+    '634は、“高さ”でもあります。'
+  ],
+
+  /* 救済リンクを表示する画面。0-3 になって初めて現れる */
+  helpVisibleOn: ['s3a', 's3b', 'end'],
+
+  /* ---- 最終救済でのみ表示する答え（通常ルートでは絶対に出ない） ---- */
+  answer: { lines: ['AM 10:00', '東京ソラマチ'] },
+
+  /* ---- 0-1 時計 ---- */
+  clock: {
+    startHour: 10,        // 初期の針の形（10:00）
+    startMinute: 0,
+    advanceHours: 12,     // 12時間進めると再び同じ形になる
+    dragGain: 1.0,        // ドラッグ感度（1.0 = 一周のドラッグで12時間）
+    snapAt: 0.965         // この進行度を超えたらスナップして完了
+  },
+
+  /* ---- 0-2 ストリップ（正解位置 = targetOffsets） ---- */
+  strips: {
+    digits:         ['6','3','4'],   // 左から
+    decoys:         ['8','2'],       // 紛らわしい断片として同じストリップに同居
+    initialOffsets: [-138, 96, -168],// 初期のズレ量（px, SVG座標）
+    targetOffsets:  [0, 0, 0],       // 正解位置（ここを変えれば正解位置が変わる）
+    tolerance:      16,              // この距離まで近づくとスナップ
+    bandHeight:     6,               // 断片の帯の太さ
+    seed:           20260921         // 断片の分割パターン
+  },
+
+  /* ---- 0-3 第一段階 時計文字配置（index 0 = 12時、以降 時計回り） ---- */
+  ring: {
+    chars:      ['ひ','む','こ','た','わ','ゆ','ら','せ','ね','ふ','あ','ろ'],
+    startIndex: 10,        // AM 10:00 → 10時の位置から開始（＝「あ」）
+    steps:      [6, 3, 4]  // 634 を時計回りの移動量として使う
+  },
+
+  /* ---- 0-3 第二段階 レイヤー合わせ（上に空・下に街の縦並び） ---- */
+  merge: {
+    top:    '空',                   // 上に置く字
+    bottom: '街',                   // 下に置く字
+    decoys:      ['網','壁'],       // 初期状態を意味不明にするためのダミー断片
+    decoyOffset: 290,               // ダミー断片の位置（正解位置では窓の外に出る）
+    initial:   { x: 30, y: -150 },  // 可動レイヤーの初期位置
+    target:    { x: 0,  y: 0 },     // 正解位置
+    tolerance: 15,
+    cell:      15,                  // 断片（モザイク）の大きさ
+    seed: 634
+  },
+
+  /* ---- 最終表示 ---- */
+  finalDisplay: {
+    lines: ['AM 10:00', '634', '空　街'],
+    lineDelayMs: 900,        // 1行ずつ出す間隔
+    tomorrowDelayMs: 6000    // 「では、明日。」までの余韻（5〜8秒）
+  },
+
+  /* ---- 進行のタイミング（ms） ---- */
+  timing: {
+    titleLead: 1600,
+    s1Result: 900, s1After: 2600, s1Next: 2200,
+    s2Done: 700,   s2Next: 4200,
+    s3aNext: 2400,
+    s3bNext: 2600
+  },
+
+  /* 対応端末での極短バイブレーション（なくても成立） */
+  haptics: true
+};
+
+/* =========================================================================
+   ユーティリティ
+   ========================================================================= */
+const NS = 'http://www.w3.org/2000/svg';
+const $  = (id) => document.getElementById(id);
+const clamp = (v,a,b) => v < a ? a : (v > b ? b : v);
+const lerp  = (a,b,t) => a + (b-a)*t;
+const wait  = (ms) => new Promise(r => setTimeout(r, ms));
+const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function svg(name, attrs){
+  const e = document.createElementNS(NS, name);
+  if (attrs) for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+function show(el, on){ if (el) el.classList.toggle('on', on !== false); }
+function buzz(ms){
+  if (!CONFIG.haptics) return;
+  try { if (navigator.vibrate) navigator.vibrate(ms || 8); } catch(e){ /* 非対応端末は無視 */ }
+}
+/* #rrggbb の補間 */
+function mixHex(a, b, t){
+  const pa = [parseInt(a.substr(1,2),16), parseInt(a.substr(3,2),16), parseInt(a.substr(5,2),16)];
+  const pb = [parseInt(b.substr(1,2),16), parseInt(b.substr(3,2),16), parseInt(b.substr(5,2),16)];
+  const c = pa.map((v,i)=> Math.round(lerp(v, pb[i], t)));
+  return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+}
+/* キーフレーム配列 [{p, ...}] から補間 */
+function sample(stops, p, key, isColor){
+  let i = 0;
+  while (i < stops.length - 2 && p > stops[i+1].p) i++;
+  const a = stops[i], b = stops[i+1];
+  const t = b.p === a.p ? 0 : clamp((p - a.p) / (b.p - a.p), 0, 1);
+  return isColor ? mixHex(a[key], b[key], t) : lerp(a[key], b[key], t);
+}
+/* 断片の分割パターン（1〜3連続でA/Bを切り替える擬似乱数） */
+function bandPattern(count, seed){
+  let s = seed >>> 0;
+  const rnd = () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
+  const out = []; let owner = 0;
+  while (out.length < count){
+    const run = 1 + Math.floor(rnd() * 3);
+    for (let i = 0; i < run && out.length < count; i++) out.push(owner);
+    owner ^= 1;
+  }
+  return out;
+}
+/* 帯状クリップパスを defs に追加 */
+function addBandClip(defs, id, x, w, y0, y1, h, pattern, owner){
+  const cp = svg('clipPath', { id: id, clipPathUnits: 'userSpaceOnUse' });
+  let i = 0;
+  for (let y = y0; y < y1; y += h, i++){
+    if (pattern[i % pattern.length] === owner){
+      cp.appendChild(svg('rect', { x: x, y: y, width: w, height: h + 0.6 }));
+    }
+  }
+  defs.appendChild(cp);
+  return cp;
+}
+/* 市松状（ブロック）の分割パターン。帯より読み取りにくい断片になる */
+function mosaicPattern(cols, rows, seed){
+  let s = (seed >>> 0) || 1;
+  const rnd = () => (s = (s * 1103515245 + 12345) >>> 0) / 4294967296;
+  const out = new Array(cols * rows);
+  for (let i = 0; i < out.length; i++) out[i] = rnd() < 0.5 ? 0 : 1;
+  return out;
+}
+/* ブロック状クリップパスを defs に追加 */
+function addMosaicClip(defs, id, x0, y0, w, h, cell, pat, owner){
+  const cols = Math.ceil(w / cell), rows = Math.ceil(h / cell);
+  const cp = svg('clipPath', { id: id, clipPathUnits: 'userSpaceOnUse' });
+  for (let r = 0; r < rows; r++){
+    for (let c = 0; c < cols; c++){
+      if (pat[r * cols + c] === owner){
+        cp.appendChild(svg('rect', {
+          x: x0 + c * cell, y: y0 + r * cell,
+          width: cell + 0.5, height: cell + 0.5
+        }));
+      }
+    }
+  }
+  defs.appendChild(cp);
+  return { cols: cols, rows: rows };
+}
+/* SVGのclient座標 → viewBox座標 のスケール */
+function scaleOf(svgEl, vbSize, axis){
+  const r = svgEl.getBoundingClientRect();
+  const d = axis === 'x' ? r.width : r.height;
+  return d > 0 ? vbSize / d : 1;
+}
+
+/* =========================================================================
+   進行状況（localStorage）
+   ========================================================================= */
+const STAGES = ['title','s1','s2','s3a','s3b','end'];
+let state = { stage:'title', clueAM:false, clueNum:false, hintLevel:0, revealed:false };
+
+function save(){
+  try { localStorage.setItem(CONFIG.storageKey, JSON.stringify(state)); }
+  catch(e){ /* プライベートモード等では保存しないだけ */ }
+}
+function load(){
+  try {
+    const raw = localStorage.getItem(CONFIG.storageKey);
+    if (!raw) return;
+    const o = JSON.parse(raw);
+    if (o && typeof o === 'object'){
+      if (STAGES.indexOf(o.stage) >= 0) state.stage = o.stage;
+      state.clueAM   = !!o.clueAM;
+      state.clueNum  = !!o.clueNum;
+      state.hintLevel= Math.min(CONFIG.hints.length, parseInt(o.hintLevel, 10) || 0);
+      state.revealed = !!o.revealed;
+    }
+  } catch(e){ /* 壊れていたら初期状態 */ }
+}
+function resetAll(){
+  try { localStorage.removeItem(CONFIG.storageKey); } catch(e){}
+  state = { stage:'title', clueAM:false, clueNum:false, hintLevel:0, revealed:false };
+}
+/* ?reset=1 で初期化 */
+(function handleReset(){
+  if (/[?&]reset=1\b/.test(location.search)){
+    resetAll();
+    try {
+      const clean = location.pathname + location.hash;
+      history.replaceState(null, '', clean);
+    } catch(e){}
+  } else {
+    load();
+  }
+})();
+
+/* =========================================================================
+   画面切替 / 手がかり欄
+   ========================================================================= */
+const screens = {
+  title: $('scr-title'), s1: $('scr-s1'), s2: $('scr-s2'),
+  s3a: $('scr-s3a'), s3b: $('scr-s3b'), end: $('scr-end')
+};
+let current = null;
+
+function gotoScreen(name){
+  Object.keys(screens).forEach(k => screens[k].classList.toggle('active', k === name));
+  current = name;
+  const p = CONFIG.text.progress;
+  const label = name === 's1' ? p.s1 : name === 's2' ? p.s2 : (name === 's3a' || name === 's3b') ? p.s3 : '';
+  $('progress').textContent = label;
+  $('clueBar').classList.toggle('show', name !== 'title');
+  /* 救済リンクは 0-3 以降だけに出す（0-1・0-2 では存在を見せない） */
+  $('footer').classList.toggle('show', CONFIG.helpVisibleOn.indexOf(name) >= 0);
+}
+function renderClues(){
+  const am = $('clue-am'), num = $('clue-num');
+  am.textContent = CONFIG.text.s1.result;
+  show(am, state.clueAM);
+  num.innerHTML = '';
+  CONFIG.strips.digits.forEach(d => {
+    const s = document.createElement('span'); s.textContent = d; num.appendChild(s);
+  });
+  show(num, state.clueNum);
+}
+
+/* =========================================================================
+   タイトル画面
+   ========================================================================= */
+function buildTitle(){
+  const t = CONFIG.text.title;
+  $('t-zero').textContent = t.zero;
+  $('t-prologue').textContent = t.prologue;
+  $('t-lead').textContent = t.lead;
+  $('t-tap').textContent = t.tap;
+}
+async function runTitle(){
+  gotoScreen('title');
+  show($('t-zero')); 
+  await wait(600);  show($('t-prologue'));
+  await wait(CONFIG.timing.titleLead); show($('t-lead'));
+  await wait(1400); show($('t-tap')); $('t-tap').classList.add('blink');
+
+  const once = () => {
+    screens.title.removeEventListener('pointerdown', once);
+    state.stage = 's1'; save();
+    startS1();
+  };
+  screens.title.addEventListener('pointerdown', once);
+}
+
+/* =========================================================================
+   0-1 「AM 10:00」— 夜の時計を回して朝にする
+   進行度 p: 0 = 夜の10:00 / 1 = 12時間後（朝の10:00）
+   ========================================================================= */
+const SKY = [
+  /* 夜 */       { p:0.00, disc:'#080c14', hand:'#e6ecf5', ring:'#243044', page:'#04060b', star:1.00, sun:0.00 },
+  /* 深夜 */     { p:0.45, disc:'#04070d', hand:'#dde5ef', ring:'#1d2739', page:'#03050a', star:1.00, sun:0.00 },
+  /* 明け方 */   { p:0.74, disc:'#2b2434', hand:'#f1e7de', ring:'#463a4a', page:'#0c0a12', star:0.34, sun:0.18 },
+  /* 夜明け */   { p:0.89, disc:'#6f5f6b', hand:'#f7f1ea', ring:'#8a7a80', page:'#1a1620', star:0.06, sun:0.62 },
+  /* 朝 */       { p:1.00, disc:'#e3eaf3', hand:'#16202c', ring:'#aab8c8', page:'#121a26', star:0.00, sun:1.00 }
+];
+
+const s1 = { p:0, done:false, dragging:false, lastAng:0, el:{} };
+
+function buildClock(){
+  const wrap = $('s1-clockWrap');
+  const s = svg('svg', { viewBox:'0 0 260 260', class:'board', 'aria-hidden':'true' });
+
+  const defs = svg('defs');
+  /* 月の欠け */
+  const mask = svg('mask', { id:'moonMask' });
+  mask.appendChild(svg('rect', { x:0, y:0, width:260, height:260, fill:'#fff' }));
+  mask.appendChild(svg('circle', { cx:62, cy:44, r:11, fill:'#000' }));
+  defs.appendChild(mask);
+  s.appendChild(defs);
+
+  /* 空のパネル（＝背景。夜→朝で色が変わる） */
+  const sky = svg('rect', { x:0, y:0, width:260, height:260, rx:24, fill:'#080c14' });
+  s.appendChild(sky);
+
+  /* 星 */
+  const stars = svg('g', { opacity:1 });
+  const starPos = [[28,36,1.2],[54,72,.9],[86,28,1.4],[118,58,.8],[148,32,1.1],[196,48,1.3],
+                   [226,82,.9],[36,120,1.0],[232,150,1.1],[44,206,.9],[210,212,1.2],[128,232,.8],
+                   [176,20,.8],[16,166,1.0]];
+  starPos.forEach(q => stars.appendChild(svg('circle', { cx:q[0], cy:q[1], r:q[2], fill:'#eef3fb', opacity:0.75 })));
+  s.appendChild(stars);
+
+  /* 月 */
+  const moon = svg('circle', { cx:52, cy:46, r:13, fill:'#e8eefa', mask:'url(#moonMask)', opacity:1 });
+  s.appendChild(moon);
+
+  /* 太陽（朝） */
+  const sunG = svg('g', { opacity:0 });
+  sunG.appendChild(svg('circle', { cx:208, cy:48, r:26, fill:'#ffe9c9', opacity:.20 }));
+  sunG.appendChild(svg('circle', { cx:208, cy:48, r:13, fill:'#fff3dd' }));
+  s.appendChild(sunG);
+
+  /* 文字盤 */
+  const face = svg('circle', { cx:130, cy:130, r:88, fill:'none', stroke:'#243044', 'stroke-width':1 });
+  s.appendChild(face);
+
+  /* 目盛り */
+  const ticks = svg('g', { stroke:'#243044', 'stroke-width':1.4, 'stroke-linecap':'round' });
+  for (let i = 0; i < 12; i++){
+    const a = (i * 30 - 90) * Math.PI / 180;
+    const r1 = i % 3 === 0 ? 72 : 78, r2 = 84;
+    ticks.appendChild(svg('line', {
+      x1: 130 + Math.cos(a)*r1, y1: 130 + Math.sin(a)*r1,
+      x2: 130 + Math.cos(a)*r2, y2: 130 + Math.sin(a)*r2
+    }));
+  }
+  s.appendChild(ticks);
+
+  /* 針 */
+  const hour = svg('line',  { x1:130, y1:130, x2:130, y2:78,  stroke:'#e6ecf5', 'stroke-width':3.4, 'stroke-linecap':'round' });
+  const min  = svg('line',  { x1:130, y1:130, x2:130, y2:54,  stroke:'#e6ecf5', 'stroke-width':1.8, 'stroke-linecap':'round' });
+  const pin  = svg('circle',{ cx:130, cy:130, r:3.2, fill:'#e6ecf5' });
+  s.appendChild(hour); s.appendChild(min); s.appendChild(pin);
+
+  /* 操作用の透明な円 */
+  const hit = svg('circle', { cx:130, cy:130, r:120, fill:'#000', 'fill-opacity':0, style:'pointer-events:all;cursor:grab' });
+  s.appendChild(hit);
+
+  wrap.appendChild(s);
+  s1.el = { svg:s, sky:sky, stars:stars, moon:moon, sun:sunG, face:face, ticks:ticks, hour:hour, min:min, pin:pin, hit:hit };
+
+  /* --- ドラッグ：時計盤を時計回りに回すと時間が進む --- */
+  const center = () => {
+    const r = s.getBoundingClientRect();
+    return { x: r.left + r.width/2, y: r.top + r.height/2 };
+  };
+  const angleAt = (e) => {
+    const c = center();
+    return Math.atan2(e.clientY - c.y, e.clientX - c.x) * 180 / Math.PI;
+  };
+  hit.addEventListener('pointerdown', (e) => {
+    if (s1.done) return;
+    s1.dragging = true; s1.lastAng = angleAt(e);
+    try { hit.setPointerCapture(e.pointerId); } catch(err){}
+    e.preventDefault();
+  });
+  hit.addEventListener('pointermove', (e) => {
+    if (!s1.dragging || s1.done) return;
+    const a = angleAt(e);
+    let d = a - s1.lastAng;
+    while (d > 180) d -= 360;
+    while (d < -180) d += 360;
+    s1.lastAng = a;
+    s1.p = clamp(s1.p + (d / 360) * CONFIG.clock.dragGain, 0, 1);
+    paintClock(s1.p);
+    if (s1.p >= CONFIG.clock.snapAt) finishS1();
+    e.preventDefault();
+  });
+  const up = () => { s1.dragging = false; };
+  hit.addEventListener('pointerup', up);
+  hit.addEventListener('pointercancel', up);
+}
+
+/* 進行度に応じて時計と空を描画 */
+function paintClock(p){
+  const e = s1.el;
+  const h = CONFIG.clock.startHour + CONFIG.clock.advanceHours * p;
+  const m = (CONFIG.clock.startMinute / 60 + CONFIG.clock.advanceHours * p) * 60;
+  const ha = (h % 12) * 30 + (CONFIG.clock.startMinute / 60) * 30 - 90;
+  const ma = (m % 60) * 6 - 90;
+
+  const hr = 52, mr = 76;
+  e.hour.setAttribute('x2', 130 + Math.cos(ha*Math.PI/180)*hr);
+  e.hour.setAttribute('y2', 130 + Math.sin(ha*Math.PI/180)*hr);
+  e.min.setAttribute('x2',  130 + Math.cos(ma*Math.PI/180)*mr);
+  e.min.setAttribute('y2',  130 + Math.sin(ma*Math.PI/180)*mr);
+
+  const disc = sample(SKY, p, 'disc', true);
+  const hand = sample(SKY, p, 'hand', true);
+  const ring = sample(SKY, p, 'ring', true);
+  const page = sample(SKY, p, 'page', true);
+  e.sky.setAttribute('fill', disc);
+  e.hour.setAttribute('stroke', hand);
+  e.min.setAttribute('stroke', hand);
+  e.pin.setAttribute('fill', hand);
+  e.face.setAttribute('stroke', ring);
+  e.ticks.setAttribute('stroke', ring);
+  e.stars.setAttribute('opacity', sample(SKY, p, 'star', false));
+  e.moon.setAttribute('opacity',  sample(SKY, p, 'star', false));
+  e.sun.setAttribute('opacity',   sample(SKY, p, 'sun', false));
+  document.documentElement.style.setProperty('--bg', page);
+}
+
+function startS1(){
+  gotoScreen('s1');
+  $('s1-prompt').textContent = CONFIG.text.s1.prompt;
+  $('s1-result').textContent = CONFIG.text.s1.result;
+  $('s1-after').textContent  = CONFIG.text.s1.after;
+  s1.p = 0; s1.done = false;
+  paintClock(0);
+  setTimeout(() => show($('s1-prompt')), 500);
+}
+
+async function finishS1(){
+  if (s1.done) return;
+  s1.done = true;
+  /* 12時間ちょうどにスナップ */
+  const from = s1.p, t0 = performance.now(), dur = reduceMotion ? 1 : 420;
+  await new Promise(res => {
+    const step = (t) => {
+      const k = clamp((t - t0) / dur, 0, 1);
+      s1.p = lerp(from, 1, 1 - Math.pow(1 - k, 3));
+      paintClock(s1.p);
+      if (k < 1) requestAnimationFrame(step); else res();
+    };
+    requestAnimationFrame(step);
+  });
+  buzz(10);
+  show($('s1-prompt'), false);
+  await wait(CONFIG.timing.s1Result);
+  show($('s1-result'));                   /* 静かに AM 10:00 だけ */
+  state.clueAM = true; save(); renderClues();
+  await wait(CONFIG.timing.s1After);
+  show($('s1-after'));                    /* 「ひとつめ。」 */
+  await wait(CONFIG.timing.s1Next);
+  /* 0-2以降は再び夜の基調に戻す（再読み込み時と見た目をそろえる） */
+  document.documentElement.style.setProperty('--bg', '#04060b');
+  state.stage = 's2'; save();
+  startS2();
+}
+
+/* =========================================================================
+   0-2 「634」— 3本のストリップの高さを合わせる
+   各列：固定レイヤー（帯B）＋可動ストリップ（帯A）。重なると数字が完成。
+   ========================================================================= */
+const s2 = { offsets:[], solved:[false,false,false], strips:[], svg:null, drag:null };
+
+function buildStrips(){
+  const C = CONFIG.strips;
+  const wrap = $('s2-boardWrap');
+  const VB_W = 300, VB_H = 220;
+  const s = svg('svg', { viewBox:'0 0 ' + VB_W + ' ' + VB_H, class:'board', 'aria-hidden':'true' });
+  const defs = svg('defs');
+  s.appendChild(defs);
+
+  const colX = [10, 105, 200], colW = 90;
+  const winY = 15, winH = 190;
+  const gy0 = 64, gy1 = 160;                    /* 数字の断片化範囲 */
+  const nBands = Math.ceil((gy1 - gy0) / C.bandHeight);
+  const DECOY = 210;                            /* 紛らわしい断片の位置 */
+
+  for (let i = 0; i < 3; i++){
+    const x = colX[i], cx = x + colW/2;
+    const pat = bandPattern(nBands, C.seed + i * 977);
+
+    /* 窓（はみ出しを隠す） */
+    const winId = 'win' + i;
+    const winCp = svg('clipPath', { id:winId, clipPathUnits:'userSpaceOnUse' });
+    winCp.appendChild(svg('rect', { x:x, y:winY, width:colW, height:winH }));
+    defs.appendChild(winCp);
+
+    addBandClip(defs, 'bA'+i, x-4, colW+8, gy0, gy1, C.bandHeight, pat, 0);
+    addBandClip(defs, 'bB'+i, x-4, colW+8, gy0, gy1, C.bandHeight, pat, 1);
+
+    const win = svg('g', { 'clip-path':'url(#'+winId+')' });
+
+    /* 窓の薄い枠 */
+    win.appendChild(svg('rect', { x:x+0.5, y:winY+0.5, width:colW-1, height:winH-1,
+      fill:'rgba(255,255,255,0.012)', stroke:'rgba(233,238,246,0.10)', 'stroke-width':1, rx:2 }));
+
+    const mkText = (ch) => svg('text', {
+      x:cx, y:152, 'text-anchor':'middle', 'font-size':110, 'font-weight':300,
+      fill:'#e9eef6', 'font-family':'-apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif'
+    });
+    const put = (ch, clipId, dy) => {
+      const outer = svg('g', { transform:'translate(0,'+dy+')' });
+      const inner = svg('g', { 'clip-path':'url(#'+clipId+')' });
+      const t = mkText(ch); t.textContent = ch;
+      inner.appendChild(t); outer.appendChild(inner);
+      return outer;
+    };
+
+    /* 固定レイヤー（帯B） */
+    win.appendChild(put(C.digits[i], 'bB'+i, 0));
+
+    /* 可動ストリップ（帯A）＋ダミー断片 */
+    const strip = svg('g', { transform:'translate(0,' + C.initialOffsets[i] + ')' });
+    strip.appendChild(put(C.decoys[0], 'bA'+i, -DECOY));
+    strip.appendChild(put(C.digits[i], 'bA'+i, 0));
+    strip.appendChild(put(C.decoys[1], 'bA'+i,  DECOY));
+    win.appendChild(strip);
+
+    /* 操作領域 */
+    const hit = svg('rect', { x:x, y:winY, width:colW, height:winH, fill:'#000', 'fill-opacity':0,
+      style:'pointer-events:all;cursor:grab' });
+    win.appendChild(hit);
+    s.appendChild(win);
+
+    s2.strips.push({ g:strip, hit:hit });
+    s2.offsets.push(C.initialOffsets[i]);
+
+    /* --- 縦ドラッグ --- */
+    hit.addEventListener('pointerdown', (e) => {
+      if (s2.solved[i]) return;
+      s2.drag = { i:i, y0:e.clientY, off0:s2.offsets[i], k:scaleOf(s, VB_H, 'y') };
+      try { hit.setPointerCapture(e.pointerId); } catch(err){}
+      e.preventDefault();
+    });
+    hit.addEventListener('pointermove', (e) => {
+      if (!s2.drag || s2.drag.i !== i) return;
+      const d = s2.drag;
+      let off = d.off0 + (e.clientY - d.y0) * d.k;
+      off = clamp(off, -250, 250);
+      s2.offsets[i] = off;
+      strip.setAttribute('transform', 'translate(0,' + off + ')');
+      /* 正解位置に近づくと軽くスナップ */
+      if (Math.abs(off - CONFIG.strips.targetOffsets[i]) <= CONFIG.strips.tolerance){
+        lockStrip(i);
+        s2.drag = null;
+      }
+      e.preventDefault();
+    });
+    const up = () => { s2.drag = null; };
+    hit.addEventListener('pointerup', up);
+    hit.addEventListener('pointercancel', up);
+  }
+
+  wrap.appendChild(s);
+  s2.svg = s;
+}
+
+function lockStrip(i){
+  if (s2.solved[i]) return;
+  s2.solved[i] = true;
+  const target = CONFIG.strips.targetOffsets[i];
+  const g = s2.strips[i].g;
+  const from = s2.offsets[i], t0 = performance.now(), dur = reduceMotion ? 1 : 260;
+  const step = (t) => {
+    const k = clamp((t - t0)/dur, 0, 1);
+    const v = lerp(from, target, 1 - Math.pow(1-k, 3));
+    s2.offsets[i] = v;
+    g.setAttribute('transform', 'translate(0,' + v + ')');
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  buzz(8);
+  if (s2.solved.every(Boolean)) finishS2();
+}
+
+function startS2(){
+  gotoScreen('s2');
+  $('s2-prompt').textContent = CONFIG.text.s2.prompt;
+  const stack = $('s2-stack'); stack.innerHTML = '';
+  CONFIG.strips.digits.forEach(d => { const el = document.createElement('div'); el.textContent = d; stack.appendChild(el); });
+  $('s2-caption').textContent = CONFIG.text.s2.caption;
+  show($('s2-done'), false);
+  $('s2-boardWrap').style.opacity = '1';
+  setTimeout(() => show($('s2-prompt')), 400);
+}
+
+async function finishS2(){
+  await wait(CONFIG.timing.s2Done);
+  /* 盤面を静かに消して、縦に 6 / 3 / 4 を残す */
+  $('s2-boardWrap').style.transition = 'opacity .9s ' + getComputedStyle(document.documentElement).getPropertyValue('--ease');
+  $('s2-boardWrap').style.opacity = '0';
+  show($('s2-prompt'), false);
+  await wait(900);
+  show($('s2-done'));
+  state.clueNum = true; save(); renderClues();
+  await wait(CONFIG.timing.s2Next);
+  state.stage = 's3a'; save();
+  startS3a();
+}
+
+/* =========================================================================
+   0-3 第一段階 — ひらがなの時計。AM 10:00 の位置から 634 だけ時計回り。
+   ========================================================================= */
+const s3a = { seq:[], step:0, chars:[], done:false, svgEl:null, chordG:null };
+
+/* 正解の並び（index）を計算： startIndex → +6 → +3 → +4（時計回り） */
+function ringSequence(){
+  const seq = [CONFIG.ring.startIndex % 12];
+  let cur = CONFIG.ring.startIndex % 12;
+  CONFIG.ring.steps.forEach(n => { cur = (cur + n) % 12; seq.push(cur); });
+  return seq;
+}
+
+function buildRing(){
+  const wrap = $('s3a-ringWrap');
+  const s = svg('svg', { viewBox:'0 0 260 260', class:'board', 'aria-hidden':'true' });
+
+  /* 時計と分かる最低限の目盛りだけ（数字1〜12は出さない） */
+  s.appendChild(svg('circle', { cx:130, cy:130, r:104, fill:'none', stroke:'rgba(233,238,246,0.08)', 'stroke-width':1 }));
+  const ticks = svg('g', { fill:'rgba(233,238,246,0.16)' });
+  for (let i = 0; i < 12; i++){
+    const a = (i*30 - 90) * Math.PI/180;
+    ticks.appendChild(svg('circle', { cx:130 + Math.cos(a)*116, cy:130 + Math.sin(a)*116, r:1.5 }));
+  }
+  s.appendChild(ticks);
+
+  /* 選択の軌跡（控えめな線） */
+  const chord = svg('g', { stroke:'rgba(233,238,246,0.28)', 'stroke-width':1, fill:'none' });
+  s.appendChild(chord);
+  s3a.chordG = chord;
+
+  /* 中央に残す「あわせろ」 */
+  const center = svg('text', { id:'ringCenter', x:130, y:139, 'text-anchor':'middle' });
+  s.appendChild(center);
+
+  /* 12文字 */
+  const R = 88;
+  CONFIG.ring.chars.forEach((ch, i) => {
+    const a = (i*30 - 90) * Math.PI/180;
+    const x = 130 + Math.cos(a)*R, y = 130 + Math.sin(a)*R;
+    const g = svg('g');
+    const t = svg('text', { x:x, y:y+8, 'text-anchor':'middle', class:'ringChar' });
+    t.textContent = ch;
+    const hit = svg('circle', { cx:x, cy:y, r:22, class:'ringHit', style:'pointer-events:all' });
+    g.appendChild(t); g.appendChild(hit); s.appendChild(g);
+    s3a.chars.push({ g:g, text:t, x:x, y:y });
+    hit.addEventListener('pointerdown', (e) => { e.preventDefault(); onRingTap(i); });
+  });
+
+  wrap.appendChild(s);
+  s3a.svgEl = s;
+}
+
+function onRingTap(i){
+  if (s3a.done) return;
+  if (i === s3a.seq[s3a.step]){
+    s3a.chars[i].text.classList.add('picked');
+    if (s3a.step > 0){
+      const a = s3a.chars[s3a.seq[s3a.step-1]], b = s3a.chars[i];
+      s3a.chordG.appendChild(svg('line', { x1:a.x, y1:a.y, x2:b.x, y2:b.y }));
+    }
+    s3a.step++;
+    buzz(6);
+    if (s3a.step === s3a.seq.length) finishS3a();
+  } else {
+    /* 間違い：静かにリセット（一瞬だけ揺れる） */
+    const el = s3a.chars[i].g;
+    el.classList.remove('shake');
+    void el.getBoundingClientRect();
+    el.classList.add('shake');
+    setTimeout(() => el.classList.remove('shake'), 460);
+    resetRing();
+  }
+}
+function resetRing(){
+  s3a.step = 0;
+  s3a.chars.forEach(c => c.text.classList.remove('picked'));
+  while (s3a.chordG.firstChild) s3a.chordG.removeChild(s3a.chordG.firstChild);
+}
+
+async function finishS3a(){
+  s3a.done = true;
+  buzz(12);
+  await wait(500);
+  /* 他の文字を暗くする */
+  s3a.chars.forEach((c, i) => { if (s3a.seq.indexOf(i) < 0) c.text.classList.add('dark'); });
+  show($('s3a-prompt'), false);
+  await wait(700);
+  /* 選んだ4文字も消し、中央に「あわせろ」だけ残す */
+  s3a.chars.forEach(c => c.text.classList.add('dark'));
+  while (s3a.chordG.firstChild) s3a.chordG.removeChild(s3a.chordG.firstChild);
+  const center = $('ringCenter');
+  center.textContent = CONFIG.ring.chars[s3a.seq[0]] + CONFIG.ring.chars[s3a.seq[1]]
+                     + CONFIG.ring.chars[s3a.seq[2]] + CONFIG.ring.chars[s3a.seq[3]];
+  show(center);
+  await wait(CONFIG.timing.s3aNext);
+  state.stage = 's3b'; save();
+  startS3b();
+}
+
+function startS3a(){
+  gotoScreen('s3a');
+  $('s3a-prompt').textContent = CONFIG.text.s3a.prompt;
+  s3a.seq = ringSequence();
+  s3a.done = false; resetRing();
+  s3a.chars.forEach(c => c.text.classList.remove('dark'));
+  const center = $('ringCenter'); if (center){ center.classList.remove('on'); center.textContent = ''; }
+  setTimeout(() => show($('s3a-prompt')), 400);
+}
+
+/* =========================================================================
+   0-3 第二段階 — 2枚の半透明レイヤーを「合わせる」
+   上側＝空のレイヤー / 下側＝街のレイヤー。重なると 空　街 が読める。
+   ========================================================================= */
+const s3b = { pos:{x:0,y:0}, done:false, layer:null, lower:null, svgEl:null, drag:null };
+
+function buildMerge(){
+  const M = CONFIG.merge;
+  const wrap = $('s3b-boardWrap');
+  const VB_W = 300, VB_H = 360;
+  const s = svg('svg', { viewBox:'0 0 ' + VB_W + ' ' + VB_H, class:'board tall', 'aria-hidden':'true' });
+  const defs = svg('defs'); s.appendChild(defs);
+
+  /* 窓（この外にはみ出した断片は見えない。正解位置ではダミーが窓の外へ出る） */
+  const WX = 8, WY = 24, WW = VB_W - 16, WH = 286;
+  const winCp = svg('clipPath', { id:'mWin', clipPathUnits:'userSpaceOnUse' });
+  winCp.appendChild(svg('rect', { x:WX, y:WY, width:WW, height:WH }));
+  defs.appendChild(winCp);
+
+  /* 2枚のレイヤーは、同じブロック分割の「表」と「裏」を受け持つ */
+  const cols = Math.ceil(WW / M.cell), rows = Math.ceil(WH / M.cell);
+  const pat = mosaicPattern(cols, rows, M.seed);
+  addMosaicClip(defs, 'mA', WX, WY, WW, WH, M.cell, pat, 0);
+  addMosaicClip(defs, 'mB', WX, WY, WW, WH, M.cell, pat, 1);
+
+  /* 2文字を縦に積む（上＝空 / 下＝街） */
+  const CXC = VB_W / 2, BASE_TOP = 131, BASE_BOTTOM = 281;
+  const mkGlyphs = (chTop, chBottom, fill) => {
+    const g = svg('g');
+    const mk = (ch, y) => {
+      const t = svg('text', { x:CXC, y:y, 'text-anchor':'middle', 'font-size':104, 'font-weight':300,
+        fill:fill, 'font-family':'-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif' });
+      t.textContent = ch; return t;
+    };
+    g.appendChild(mk(chTop, BASE_TOP));
+    g.appendChild(mk(chBottom, BASE_BOTTOM));
+    return g;
+  };
+  /* 断片化した一組を、指定量だけ縦にずらして置く */
+  const put = (a, bch, fill, clipId, dy) => {
+    const outer = svg('g', { transform:'translate(0,' + dy + ')' });
+    const inner = svg('g', { 'clip-path':'url(#'+clipId+')' });
+    inner.appendChild(mkGlyphs(a, bch, fill));
+    outer.appendChild(inner);
+    return outer;
+  };
+
+  /* 窓の内側（ここだけが見える） */
+  const win = svg('g', { 'clip-path':'url(#mWin)' });
+
+  /* --- 固定レイヤー（断片の「裏」）--- */
+  const lower = svg('g', { opacity:.9 });
+  lower.appendChild(put(M.top, M.bottom, '#dcdcd4', 'mB', 0));
+  win.appendChild(lower);
+
+  /* --- 可動レイヤー（断片の「表」）。ダミー断片を一緒に持ち歩く --- */
+  const upper = svg('g', { opacity:.9, transform:'translate(' + M.initial.x + ',' + M.initial.y + ')' });
+  upper.appendChild(put(M.decoys[0], M.decoys[1], '#d3e2ff', 'mA', M.decoyOffset));
+  upper.appendChild(put(M.top, M.bottom, '#d3e2ff', 'mA', 0));
+  win.appendChild(upper);
+  s.appendChild(win);
+
+  /* 窓の枠（動かない） */
+  s.appendChild(svg('rect', { x:WX+0.5, y:WY+0.5, width:WW-1, height:WH-1,
+    fill:'none', stroke:'rgba(233,238,246,0.12)', 'stroke-width':1, rx:2 }));
+
+  /* 窓の上：空の気配（小さな点。漢字は描かない） */
+  const skyDots = svg('g', { fill:'rgba(211,226,255,0.30)' });
+  [[38,13,1.2],[88,6,1.0],[142,16,1.3],[196,8,1.0],[248,15,1.2],[116,18,.9],[272,6,1.1]]
+    .forEach(q => skyDots.appendChild(svg('circle', { cx:q[0], cy:q[1], r:q[2] })));
+  s.appendChild(skyDots);
+  /* 窓の下：街の気配（小さな窓の並び。漢字は描かない） */
+  const town = svg('g', { fill:'rgba(233,238,246,0.16)' });
+  for (let i = 0; i < 13; i++){
+    town.appendChild(svg('rect', { x:14 + i*21, y:322 + (i%3)*5, width:5, height:5 }));
+  }
+  s.appendChild(town);
+
+  /* 操作領域（動かない。どこを触っても可動レイヤーが動く） */
+  const hit = svg('rect', { x:0, y:WY-14, width:VB_W, height:WH+28, fill:'#000', 'fill-opacity':0,
+    style:'pointer-events:all;cursor:grab' });
+  s.appendChild(hit);
+
+  wrap.appendChild(s);
+  s3b.layer = upper; s3b.lower = lower; s3b.svgEl = s;
+  s3b.pos = { x:M.initial.x, y:M.initial.y };
+
+  hit.addEventListener('pointerdown', (e) => {
+    if (s3b.done) return;
+    s3b.drag = { x0:e.clientX, y0:e.clientY, px:s3b.pos.x, py:s3b.pos.y,
+                 kx:scaleOf(s, VB_W, 'x'), ky:scaleOf(s, VB_H, 'y') };
+    try { hit.setPointerCapture(e.pointerId); } catch(err){}
+    e.preventDefault();
+  });
+  hit.addEventListener('pointermove', (e) => {
+    if (!s3b.drag || s3b.done) return;
+    const d = s3b.drag;
+    s3b.pos.x = clamp(d.px + (e.clientX - d.x0) * d.kx, -140, 140);
+    s3b.pos.y = clamp(d.py + (e.clientY - d.y0) * d.ky, -230, 230);
+    upper.setAttribute('transform', 'translate(' + s3b.pos.x + ',' + s3b.pos.y + ')');
+    const dx = s3b.pos.x - M.target.x, dy = s3b.pos.y - M.target.y;
+    if (Math.sqrt(dx*dx + dy*dy) <= M.tolerance){ s3b.drag = null; finishS3b(); }
+    e.preventDefault();
+  });
+  const up = () => { s3b.drag = null; };
+  hit.addEventListener('pointerup', up);
+  hit.addEventListener('pointercancel', up);
+}
+
+function startS3b(){
+  gotoScreen('s3b');
+  $('s3b-prompt').textContent = CONFIG.text.s3b.prompt;
+  s3b.done = false;
+  s3b.pos = { x:CONFIG.merge.initial.x, y:CONFIG.merge.initial.y };
+  if (s3b.layer) s3b.layer.setAttribute('transform', 'translate(' + s3b.pos.x + ',' + s3b.pos.y + ')');
+  setTimeout(() => show($('s3b-prompt')), 400);
+}
+
+async function finishS3b(){
+  if (s3b.done) return;
+  s3b.done = true;
+  const M = CONFIG.merge;
+  /* 正確に重ねる（スナップ） */
+  const from = { x:s3b.pos.x, y:s3b.pos.y }, t0 = performance.now(), dur = reduceMotion ? 1 : 300;
+  await new Promise(res => {
+    const step = (t) => {
+      const k = clamp((t - t0)/dur, 0, 1), e = 1 - Math.pow(1-k, 3);
+      s3b.pos.x = lerp(from.x, M.target.x, e);
+      s3b.pos.y = lerp(from.y, M.target.y, e);
+      s3b.layer.setAttribute('transform', 'translate(' + s3b.pos.x + ',' + s3b.pos.y + ')');
+      if (k < 1) requestAnimationFrame(step); else res();
+    };
+    requestAnimationFrame(step);
+  });
+  buzz(14);
+  /* 2枚がひとつの形として読めるようになる */
+  s3b.layer.setAttribute('opacity', 1);
+  if (s3b.lower) s3b.lower.setAttribute('opacity', 1);
+  s3b.svgEl.querySelectorAll('text').forEach(t => {
+    t.style.transition = reduceMotion ? 'none' : 'fill 1.1s ' + 'cubic-bezier(.22,.61,.36,1)';
+    t.setAttribute('fill', '#f2f6fc');
+  });
+  await wait(CONFIG.timing.s3bNext);
+  state.stage = 'end'; save();
+  runEnd();
+}
+
+/* =========================================================================
+   最終画面 — AM 10:00 / 634 / 空　街 だけ。答え合わせはしない。
+   ========================================================================= */
+async function runEnd(){
+  /* 一度暗転 */
+  const bo = $('blackout');
+  bo.classList.add('on');
+  await wait(reduceMotion ? 50 : 1200);
+
+  gotoScreen('end');
+  $('clueBar').classList.remove('show');   /* 最終画面は手がかり欄も消して余白をとる */
+  document.documentElement.style.setProperty('--bg', '#04060b');
+
+  const box = $('f-lines'); box.innerHTML = '';
+  const divs = CONFIG.finalDisplay.lines.map(txt => {
+    const d = document.createElement('div'); d.textContent = txt; box.appendChild(d); return d;
+  });
+  $('f-tomorrow').textContent = CONFIG.text.final.tomorrow;
+  $('f-end').textContent = CONFIG.text.final.end;
+  show($('f-tomorrow'), false); show($('f-end'), false);
+
+  bo.classList.remove('on');
+  await wait(900);
+  for (let i = 0; i < divs.length; i++){
+    show(divs[i]);
+    await wait(CONFIG.finalDisplay.lineDelayMs);
+  }
+  await wait(CONFIG.finalDisplay.tomorrowDelayMs);
+  show($('f-tomorrow'));
+  await wait(1600);
+  show($('f-end'));
+}
+
+/* =========================================================================
+   救済システム（ヒント → 2段階確認 → 答え）
+   ========================================================================= */
+function buildHelp(){
+  const H = CONFIG.text.help;
+  $('helpLink').textContent = H.link;
+  $('hint-title').textContent = H.title;
+  $('hint-next').textContent = H.next;
+  $('hint-escalate').textContent = H.escalate;
+  $('hint-close').textContent = H.close;
+  $('c1-text').textContent = H.confirm1;
+  $('c1-yes').textContent = H.yes1;  $('c1-no').textContent = H.no;
+  $('c2-text').textContent = H.confirm2;
+  $('c2-yes').textContent = H.yes2;  $('c2-no').textContent = H.no;
+  $('rv-warn').textContent = H.revealWarn;
+  $('rv-close').textContent = H.revealBack;
+
+  const list = $('hintList'); list.innerHTML = '';
+  CONFIG.hints.forEach((h, i) => {
+    const d = document.createElement('div');
+    d.className = 'hintItem';
+    d.innerHTML = '<span class="no">HINT ' + (i+1) + '</span>';
+    const p = document.createElement('span'); p.textContent = h; d.appendChild(p);
+    list.appendChild(d);
+  });
+
+  const rv = $('rv-lines'); rv.innerHTML = '';
+  CONFIG.answer.lines.forEach(t => { const d = document.createElement('div'); d.textContent = t; rv.appendChild(d); });
+
+  const openOv  = (el) => el.classList.add('on');
+  const closeOv = (el) => el.classList.remove('on');
+
+  function paintHints(){
+    const items = list.children;
+    for (let i = 0; i < items.length; i++) items[i].classList.toggle('on', i < state.hintLevel);
+    const more = state.hintLevel < CONFIG.hints.length;
+    $('hint-next').textContent = more ? H.next : H.noMore;
+    $('hint-next').disabled = !more;
+    $('hint-next').style.opacity = more ? '1' : '.3';
+  }
+
+  $('helpLink').addEventListener('click', () => {
+    if (state.hintLevel === 0){ state.hintLevel = 1; save(); }
+    paintHints(); openOv($('hintOverlay'));
+  });
+  $('hint-next').addEventListener('click', () => {
+    if (state.hintLevel < CONFIG.hints.length){ state.hintLevel++; save(); paintHints(); }
+  });
+  $('hint-close').addEventListener('click', () => closeOv($('hintOverlay')));
+  $('hint-escalate').addEventListener('click', () => openOv($('confirm1')));
+  $('c1-no').addEventListener('click', () => closeOv($('confirm1')));
+  $('c1-yes').addEventListener('click', () => { closeOv($('confirm1')); openOv($('confirm2')); });
+  $('c2-no').addEventListener('click', () => closeOv($('confirm2')));
+  $('c2-yes').addEventListener('click', () => {
+    state.revealed = true; save();
+    closeOv($('confirm2')); closeOv($('hintOverlay'));
+    openOv($('revealScreen'));
+  });
+  $('rv-close').addEventListener('click', () => closeOv($('revealScreen')));
+}
+
+/* =========================================================================
+   初期化
+   ========================================================================= */
+function init(){
+  buildTitle();
+  buildClock();
+  buildStrips();
+  buildRing();
+  buildMerge();
+  buildHelp();
+  renderClues();
+
+  /* 再読み込み時は保存されたステージの先頭から再開 */
+  switch (state.stage){
+    case 's1':  startS1();  break;
+    case 's2':  startS2();  break;
+    case 's3a': startS3a(); break;
+    case 's3b': startS3b(); break;
+    case 'end': runEnd();   break;
+    default:    runTitle(); break;
+  }
+}
+
+if (document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+
+/* iOS Safari：ダブルタップ拡大とスクロールバウンスの抑制 */
+document.addEventListener('gesturestart', (e) => e.preventDefault());
+document.addEventListener('touchmove', (e) => {
+  if (e.target && e.target.closest && e.target.closest('.overlay')) return; /* ヒントはスクロール可 */
+  e.preventDefault();
+}, { passive:false });
+
+})();
+</script>
+</body>
+</html>
